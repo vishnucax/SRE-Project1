@@ -1,0 +1,78 @@
+# ===========================================================================
+# CI/CD Pipeline — builds the app image, pushes to ghcr.io, deploys to k3s
+# Triggers on every push to the main branch.
+# ===========================================================================
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # allows manual trigger from the Actions tab
+
+# Permissions needed to push to GitHub Container Registry (ghcr.io)
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/vishnucax/sre-project1
+
+jobs:
+  # -------------------------------------------------------------------------
+  # JOB 1: Build the Docker image, scan it, push to ghcr.io
+  # -------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # Security: scan the image for known vulnerabilities (PDF: image scanning)
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: table
+          exit-code: '0'          # don't fail the build on vulns (report only)
+          severity: CRITICAL,HIGH
+
+  # -------------------------------------------------------------------------
+  # JOB 2: Deploy to k3s on the VM via Helm (over SSH)
+  # -------------------------------------------------------------------------
+  deploy:
+    needs: build              # only run if build succeeded
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to k3s via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd ~/SRE-Project1
+            git pull origin main
+            helm upgrade --install notes-app ./helm/notes-app \
+              --set app.image.tag=${{ github.sha }} \
+              --set app.image.pullPolicy=Always \
+              --wait --timeout 3m
+            kubectl rollout status deployment notes-api --timeout=120s
