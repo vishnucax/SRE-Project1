@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notes Board — SRE Eval</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --accent2: #f97316;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --ok: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .container { width: 100%; max-width: 640px; }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    h1 .pulse { color: var(--accent); }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid #334155;
+    }
+    .status-row {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 14px; margin-bottom: 6px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
+    .muted { color: var(--muted); }
+    textarea {
+      width: 100%; background: #0f172a; border: 1px solid #334155;
+      border-radius: 8px; color: var(--text); padding: 12px;
+      font-size: 14px; resize: vertical; min-height: 70px; margin-bottom: 10px;
+    }
+    .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      background: var(--accent); color: #0f172a; border: none;
+      padding: 10px 16px; border-radius: 8px; font-weight: 600;
+      cursor: pointer; font-size: 14px;
+    }
+    button.secondary { background: var(--accent2); color: #fff; }
+    button:hover { opacity: 0.9; }
+    .note {
+      background: #0f172a; border-left: 3px solid var(--accent);
+      padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 14px;
+    }
+    .note .time { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); margin-bottom: 12px; }
+    #result { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📝 Notes <span class="pulse">Board</span></h1>
+    <p class="subtitle">SRE HandsOn Evaluation — Flask + Postgres on k3s</p>
+
+    <div class="card">
+      <div class="status-row">
+        <span class="dot"></span>
+        <strong>Service healthy</strong>
+      </div>
+      <div class="status-row muted">Served by pod: <code>{{ hostname }}</code></div>
+      <div id="result"></div>
+      <div class="btns" style="margin-top:12px;">
+        <button onclick="pingHealth()">Ping /health</button>
+        <button class="secondary" onclick="runStress()">Run CPU Stress</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Add a note</div>
+      <textarea id="noteInput" placeholder="Type something..."></textarea>
+      <div class="btns">
+        <button onclick="addNote()">Save Note</button>
+        <button onclick="loadNotes()">Refresh</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Recent notes</div>
+      <div id="notesList"><p class="muted">Loading...</p></div>
+    </div>
+  </div>
+
+  <script>
+    async function loadNotes() {
+      const list = document.getElementById("notesList");
+      try {
+        const res = await fetch("/api/notes");
+        const data = await res.json();
+        if (!data.notes || data.notes.length === 0) {
+          list.innerHTML = '<p class="muted">No notes yet. Add one above!</p>';
+          return;
+        }
+        list.innerHTML = data.notes.map(n =>
+          `<div class="note">${escapeHtml(n.content)}
+             <div class="time">${new Date(n.created_at).toLocaleString()}</div>
+           </div>`
+        ).join("");
+      } catch (e) {
+        list.innerHTML = '<p class="muted">⚠️ Could not load notes (DB may be down)</p>';
+      }
+    }
+
+    async function addNote() {
+      const input = document.getElementById("noteInput");
+      const content = input.value.trim();
+      if (!content) return;
+      try {
+        const res = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content })
+        });
+        if (res.ok) { input.value = ""; loadNotes(); }
+        else { setResult("⚠️ Failed to save note"); }
+      } catch (e) { setResult("⚠️ Error saving note"); }
+    }
+
+    async function pingHealth() {
+      try {
+        const res = await fetch("/health");
+        const data = await res.json();
+        setResult(`✅ Healthy — uptime ${data.uptime_seconds}s`);
+      } catch (e) { setResult("⚠️ Health check failed"); }
+    }
+
+    async function runStress() {
+      setResult("🔥 Running CPU stress for 5s...");
+      try {
+        const res = await fetch("/api/stress?duration=5", { method: "POST" });
+        const data = await res.json();
+        setResult(`✅ Stressed CPU for ${data.stressed_for_seconds}s`);
+      } catch (e) { setResult("⚠️ Stress test failed"); }
+    }
+
+    function setResult(msg) { document.getElementById("result").textContent = msg; }
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[c]));
+    }
+
+    loadNotes();  // load notes on page open
+  </script>
+</body>
+</html>
