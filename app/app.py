@@ -189,8 +189,13 @@ def stress():
 
 
 # ---------------------------------------------------------------------------
-# Entrypoint
+# Initialize DB at import time so it runs under gunicorn too
+# (gunicorn imports the module; it does NOT execute the __main__ block)
+# ---------------------------------------------------------------------------
+init_db()
+
+# ---------------------------------------------------------------------------
+# Entrypoint (only used when running directly, e.g. python app.py)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=8080, debug=False)
