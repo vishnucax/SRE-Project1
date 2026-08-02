@@ -69,6 +69,9 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
+            set -e
+            export PATH=$PATH:/usr/local/bin
+            export KUBECONFIG=/home/ubuntu/.kube/config
             cd ~/SRE-Project1
             git pull origin main
             helm upgrade --install notes-app ./helm/notes-app \
