@@ -1,0 +1,20 @@
+# ServiceMonitor — tells the Prometheus Operator to scrape the app's /metrics.
+# This is the kube-prometheus-stack way of adding scrape targets (cleaner than
+# editing Prometheus config directly).
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.app.name }}
+  labels:
+    app: {{ .Values.app.name }}
+    release: monitoring        # MUST match the kube-prometheus-stack release name
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.app.name }}    # selects the app Service
+  endpoints:
+    - port: http                     # named port on the Service
+      path: /metrics
+      interval: 15s
+{{- end }}
