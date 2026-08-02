@@ -1,0 +1,17 @@
+# Service — a stable internal address + load balancer for the app pods.
+# Pods come and go (new IPs each time), but the Service name stays constant.
+# Traefik ingress routes traffic here, and it load-balances across replicas.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.app.name }}
+  labels:
+    app: {{ .Values.app.name }}
+spec:
+  type: ClusterIP          # internal only; the ingress exposes it externally
+  selector:
+    app: {{ .Values.app.name }}    # routes traffic to pods carrying this label
+  ports:
+    - port: 80                      # the port the Service listens on
+      targetPort: {{ .Values.app.containerPort }}   # forwards to container port 8080
+      protocol: TCP

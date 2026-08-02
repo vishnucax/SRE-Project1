@@ -1,0 +1,27 @@
+# NetworkPolicy — network segmentation (security).
+# Declares that Postgres accepts connections ONLY from Notes API pods.
+# NOTE: Default k3s uses Flannel, which does NOT enforce NetworkPolicies.
+# This declares intent; enforcement requires a policy-capable CNI (e.g. Calico).
+# Documented in docs/security.md.
+{{- if .Values.security.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.app.name }}-postgres-policy
+  labels:
+    app: {{ .Values.app.name }}-postgres
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Values.app.name }}-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ .Values.app.name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.postgres.port }}
+{{- end }}

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: notes-app
+description: SRE HandsOn Evaluation - Notes API (Flask) with PostgreSQL on k3s
+type: application
+
+# Chart version — bump when you change the chart structure
+version: 0.1.0
+
+# The version of the app being deployed
+appVersion: "1.0.0"
+
+maintainers:
+  - name: Vishnu K

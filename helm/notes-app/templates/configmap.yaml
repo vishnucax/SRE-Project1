@@ -1,0 +1,13 @@
+# ConfigMap — non-secret configuration injected into the app as env vars.
+# Things safe to see in plain text: DB host, name, user, port.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.app.name }}-config
+  labels:
+    app: {{ .Values.app.name }}
+data:
+  DB_HOST: "{{ .Values.app.name }}-postgres"   # the Postgres Service name (DNS inside cluster)
+  DB_PORT: "{{ .Values.postgres.port }}"
+  DB_NAME: "{{ .Values.postgres.dbName }}"
+  DB_USER: "{{ .Values.postgres.dbUser }}"

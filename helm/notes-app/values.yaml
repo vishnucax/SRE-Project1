@@ -1,0 +1,77 @@
+# ===========================================================================
+# values.yaml — central configuration for the notes-app Helm chart
+# Every template file reads from here. Change settings HERE, not in templates.
+# ===========================================================================
+
+# --- Notes API (Flask) application settings ---
+app:
+  name: notes-api
+  replicaCount: 2            # 2 pods for high availability (survives 1 pod dying)
+
+  image:
+    # This gets overridden by CI/CD with the real ghcr.io image + tag.
+    # Placeholder for now so the chart is valid.
+    repository: ghcr.io/vishnucax/sre-project1
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  containerPort: 8080
+
+  # Resource requests/limits (PDF requirement).
+  # requests = guaranteed minimum. limits = hard ceiling.
+  resources:
+    requests:
+      cpu: 100m             # 0.1 CPU core
+      memory: 128Mi
+    limits:
+      cpu: 500m             # 0.5 CPU core max
+      memory: 256Mi
+
+  # Liveness/readiness probes (PDF requirement).
+  probes:
+    liveness:
+      path: /health
+      initialDelaySeconds: 15
+      periodSeconds: 10
+    readiness:
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+# --- Database (PostgreSQL) settings ---
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  # Non-secret config → goes into a ConfigMap
+  dbName: notesdb
+  dbUser: notes
+  # Secret value → goes into a Secret (NOT hardcoded in real deploys;
+  # CI/CD overrides this via --set from GitHub Secrets).
+  dbPassword: "changeme-in-ci"
+  port: 5432
+  storage: 1Gi              # persistent volume size for DB data
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# --- Ingress (Traefik) settings ---
+ingress:
+  enabled: true
+  className: traefik
+  # For a real domain you'd put it here. For the eval we use the VM's IP,
+  # so host is left empty = matches all hosts.
+  host: ""
+  path: /
+
+# --- Security settings ---
+security:
+  networkPolicy:
+    enabled: true           # restrict who can talk to Postgres
+  serviceAccount:
+    create: true
+    name: notes-api-sa

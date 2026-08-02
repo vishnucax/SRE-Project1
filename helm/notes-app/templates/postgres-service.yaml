@@ -1,0 +1,18 @@
+# Service — stable internal DNS name for Postgres.
+# The app connects to "notes-api-postgres" as DB_HOST.
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.app.name }}-postgres
+  labels:
+    app: {{ .Values.app.name }}-postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.app.name }}-postgres
+  ports:
+    - port: {{ .Values.postgres.port }}
+      targetPort: {{ .Values.postgres.port }}
+      protocol: TCP
+{{- end }}
