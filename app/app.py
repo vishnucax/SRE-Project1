@@ -17,6 +17,7 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify, render_template
 from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import Counter
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -41,8 +42,8 @@ app = Flask(__name__)
 metrics = PrometheusMetrics(app)
 metrics.info("notes_api_info", "Notes API build info", version="1.0.0")
 
-# Custom metric: total notes created (Prometheus Counter)
-notes_created_total = metrics.counter(
+# Custom metric: total notes created (proper Prometheus Counter)
+notes_created_total = Counter(
     "notes_created_total",
     "Total number of notes created",
 )
