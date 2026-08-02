@@ -17,7 +17,7 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify, render_template
 from prometheus_flask_exporter import PrometheusMetrics
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -43,9 +43,18 @@ metrics = PrometheusMetrics(app)
 metrics.info("notes_api_info", "Notes API build info", version="1.0.0")
 
 # Custom metric: total notes created (proper Prometheus Counter)
+# NOTE: a Counter resets to 0 when a pod restarts (it lives in pod memory).
 notes_created_total = Counter(
     "notes_created_total",
-    "Total number of notes created",
+    "Total number of notes created (since this pod started)",
+)
+
+# Gauge: current total number of notes in the database. Unlike the counter,
+# this reflects DB state (not per-pod memory), so it survives pod restarts.
+# It is refreshed from the database on every /metrics scrape.
+notes_in_db = Gauge(
+    "notes_in_db",
+    "Current total number of notes stored in the database",
 )
 
 
@@ -74,6 +83,20 @@ def get_db_connection():
     )
 
 
+def update_notes_gauge():
+    """Query the DB for the current note count and update the gauge."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM notes")
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        notes_in_db.set(count)
+    except Exception as e:
+        logger.warning(f"Could not update notes_in_db gauge: {e}")
+
+
 def init_db():
     """Create the notes table if it doesn't exist. Retries on startup."""
     max_retries = 10
@@ -97,6 +120,15 @@ def init_db():
             logger.warning(f"DB init attempt {attempt}/{max_retries} failed: {e}")
             time.sleep(3)
     logger.error("Failed to initialize database after retries — continuing anyway")
+
+
+# ---------------------------------------------------------------------------
+# Refresh the DB-backed gauge just before /metrics is served to Prometheus
+# ---------------------------------------------------------------------------
+@app.before_request
+def refresh_gauge_on_metrics_scrape():
+    if request.path == "/metrics":
+        update_notes_gauge()
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +226,7 @@ def stress():
 # (gunicorn imports the module; it does NOT execute the __main__ block)
 # ---------------------------------------------------------------------------
 init_db()
+update_notes_gauge()  # set the gauge once at startup
 
 # ---------------------------------------------------------------------------
 # Entrypoint (only used when running directly, e.g. python app.py)
