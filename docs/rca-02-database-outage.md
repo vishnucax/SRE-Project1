@@ -159,15 +159,23 @@ platform layer had no independent signal of the DB dependency being broken.
 
 ## 9. Evidence
 
-Screenshots in `docs/evidence/`:
-- `inc2-01-injection.png` — T+0 timestamp, script output (baseline healthy, Postgres killed, 503s start)
-- `inc2-01b-503-stream.png` — load loop showing continuous 503 responses
-- `inc2-02-alert-firing.png` — `NotesApiHighErrorRate` FIRING (red), Active 3m 20s, value 1.599
-- `inc2-03-error-rate.png` — Prometheus 5xx rate graph, peak ~5.5 req/s
-- `inc2-03b-dashboard-impact.png` — full Grafana dashboard (200s + 503s mix + Loki errors panel)
-- `inc2-04-loki-logs.png` — Loki "connection refused" errors interleaved with 503 requests
-- `inc2-05-recovered.png` — recovery output + all pods Running 1/1
-- `inc2-05b-recovery-verified.png` — `curl /api/notes` returning notes JSON post-recovery
+### Injection & 503 responses
+![T+0 injection, Postgres killed, 503s start](evidence/inc2-01-injection.png)
+![Continuous 503 responses](evidence/inc2-01b-503-stream.png)
+
+### Alert firing
+![NotesApiHighErrorRate FIRING, value 1.599](evidence/inc2-02-alert-firing.png)
+
+### Metric impact
+![Prometheus 5xx rate graph](evidence/inc2-03-error-rate.png)
+![Grafana dashboard: 200s + 503s + Loki errors](evidence/inc2-03b-dashboard-impact.png)
+
+### Logs (Loki)
+![Loki: connection refused errors](evidence/inc2-04-loki-logs.png)
+
+### Recovery
+![Recovery output, all pods Running 1/1](evidence/inc2-05-recovered.png)
+![curl /api/notes returning notes post-recovery](evidence/inc2-05b-recovery-verified.png)
 
 ---
 

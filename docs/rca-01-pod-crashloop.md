@@ -155,16 +155,23 @@ During log review, Loki surfaced a recurring line:
 
 ---
 
-## 10. Evidence
+## 9. Evidence
 
-Screenshots in `docs/evidence/`:
-- `inc1-01-injection.png` — T+0 timestamp, script banner, pods entering CrashLoopBackOff
-- `inc1-01b-pods-cbo.png` — clean single-frame CrashLoopBackOff state
-- `inc1-02-alert-firing.png` — `NotesApiPodCrashLooping` FIRING (red), Active 4m 3s
-- `inc1-03-loki-logs.png` — Loki showing "FATAL: corrupt startup configuration"
-- `inc1-04-restart-rate.png` — restart-rate PromQL graph rising during incident
-- `inc1-05-recovered.png` — recovery output + both pods Running 1/1
+### Injection & CrashLoopBackOff
+![T+0 injection, pods entering CrashLoopBackOff](evidence/inc1-01-injection.png)
+![CrashLoopBackOff state](evidence/inc1-01b-pods-cbo.png)
 
+### Alert firing
+![NotesApiPodCrashLooping FIRING](evidence/inc1-02-alert-firing.png)
+
+### Logs (Loki)
+![Loki: FATAL corrupt startup configuration](evidence/inc1-03-loki-logs.png)
+
+### Metric impact
+![Restart-rate PromQL graph rising](evidence/inc1-04-restart-rate.png)
+
+### Recovery
+![Recovery output, both pods Running 1/1](evidence/inc1-05-recovered.png)
 ---
 
 ## 11. Reproduction

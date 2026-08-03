@@ -139,12 +139,24 @@ only the pod's allotted share. This is exactly why resource limits are set.
 
 ## 9. Evidence
 
-Screenshots in `docs/evidence/`:
-- `inc3-01-top.png` — `kubectl top pods` showing high CPU on both replicas
-- `inc3-02-alert.png` — `NotesApiHighCPU` FIRING (red), values 0.550 / 0.548 cores
-- `inc3-03-grafana.png` — Grafana CPU panel showing the spike on both pods
-- `inc3-04-logs.png` — Loki "Stress test completed after 20s (iterations: 32,808,039)"
+### Baseline & injection
+![Baseline CPU before injection](evidence/inc3-00-baseline.png)
+![T+0 injection, script start](evidence/inc3-01-injection.png)
+![Load script completed](evidence/inc3-01b-script-complete.png)
 
+### High CPU observed
+![kubectl top pods showing high CPU on both replicas](evidence/inc3-02-cpu-high.png)
+
+### Alert firing
+![NotesApiHighCPU FIRING, values 0.550 / 0.548 cores](evidence/inc3-03-alert-firing.png)
+![Grafana CPU panel spike on both pods](evidence/inc3-03b-cpu-graph.png)
+
+### Logs (Loki)
+![Loki: Stress test completed, iterations 32,808,039](evidence/inc3-04-loki-logs.png)
+
+### Recovery
+![CPU returned to baseline, pods healthy](evidence/inc3-05-recovered.png)
+![End timestamp for time-to-detection](evidence/inc3-05b-end-timestamp.png)
 ---
 
 ## 10. Reproduction
