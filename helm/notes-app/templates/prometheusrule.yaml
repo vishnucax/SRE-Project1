@@ -1,4 +1,4 @@
-# PrometheusRule — alerting rules for the Notes API.
+# PrometheusRule — alerting AND recording rules for the Notes API.
 # The Prometheus Operator (from kube-prometheus-stack) auto-discovers rules
 # labeled with release=monitoring and loads them into Prometheus.
 {{- if .Values.monitoring.prometheusRule.enabled }}
@@ -11,10 +11,31 @@ metadata:
     release: monitoring        # REQUIRED so kube-prometheus-stack picks it up
 spec:
   groups:
+    # -----------------------------------------------------------------------
+    # RECORDING RULES — pre-compute reusable expressions as new time series.
+    # Dashboards and alerts can query these cheaper pre-aggregated metrics.
+    # -----------------------------------------------------------------------
+    - name: notes-api.recording
+      rules:
+        - record: notes_api:request_rate:sum
+          expr: sum(rate(flask_http_request_total[5m]))
+
+        - record: notes_api:error_rate:ratio
+          expr: |
+            sum(rate(flask_http_request_total{status=~"5.."}[5m]))
+            /
+            sum(rate(flask_http_request_total[5m]))
+
+        - record: notes_api:cpu_cores:sum_by_pod
+          expr: sum(rate(container_cpu_usage_seconds_total{namespace="default", pod=~"notes-api.*"}[3m])) by (pod)
+
+    # -----------------------------------------------------------------------
+    # ALERTING RULES — each maps to a simulated failure scenario.
+    # -----------------------------------------------------------------------
     - name: notes-api.rules
       rules:
 
-        # 1. Pod Crash Loop — catches the "Pod Crash Loop" failure scenario
+        # 1. Pod Crash Loop — catches the "Pod Crash Loop" scenario
         - alert: NotesApiPodCrashLooping
           expr: rate(kube_pod_container_status_restarts_total{namespace="default", pod=~"notes-api.*"}[5m]) > 0
           for: 2m
@@ -25,9 +46,9 @@ spec:
             summary: "Notes API pod is crash-looping"
             description: "Pod {{`{{ $labels.pod }}`}} has restarted repeatedly in the last 5 minutes."
 
-        # 2. High CPU — catches the "High CPU" failure scenario
+        # 2. High CPU — catches the "High CPU" scenario (reuses the recording rule)
         - alert: NotesApiHighCPU
-          expr: sum(rate(container_cpu_usage_seconds_total{namespace="default", pod=~"notes-api.*"}[3m])) by (pod) > 0.4
+          expr: notes_api:cpu_cores:sum_by_pod > 0.4
           for: 2m
           labels:
             severity: warning
