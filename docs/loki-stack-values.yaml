@@ -1,0 +1,53 @@
+# ===========================================================================
+# Loki + Promtail configuration (loki-stack Helm chart)
+# ---------------------------------------------------------------------------
+# Documents the configuration used to deploy Loki (log store) and Promtail
+# (log shipper) via the grafana/loki-stack Helm chart, in the 'monitoring'
+# namespace.
+#
+# Deployed with:
+#   helm install loki grafana/loki-stack \
+#     --namespace monitoring \
+#     -f docs/loki-stack-values.yaml
+# ===========================================================================
+
+# --- Loki: the log aggregation backend ---
+loki:
+  enabled: true
+  persistence:
+    enabled: false          # PoC: ephemeral storage. Production: enable + PVC.
+  config:
+    limits_config:
+      retention_period: 24h
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+    server:
+      http_listen_port: 3100   # in-cluster Service name is 'loki'
+
+# --- Promtail: runs on the node, ships pod stdout logs to Loki ---
+promtail:
+  enabled: true
+  config:
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+    # Promtail auto-discovers all pod logs on the node via the Kubernetes
+    # service-discovery config bundled in the chart. It tails container stdout
+    # and labels streams with namespace, pod, container, etc. — which is why
+    # queries like {namespace="default"} work in Grafana.
+
+# --- Disable sub-charts: we run Prometheus + Grafana from kube-prometheus-stack ---
+grafana:
+  enabled: false
+prometheus:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# NOTES
+# - Loki data source in Grafana: Connections > Data sources > Loki
+#   URL: http://loki:3100  (or http://loki.monitoring.svc.cluster.local:3100)
+# - The app logs to stdout (unbuffered); Promtail collects it, Loki stores it,
+#   Grafana queries it. No app-side change required.
+# - Verify Loki readiness from inside the cluster:
+#     kubectl run loki-test --rm -it --image=curlimages/curl --restart=Never \
+#       -n monitoring -- curl -s http://loki:3100/ready
+# ---------------------------------------------------------------------------

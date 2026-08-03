@@ -1,0 +1,316 @@
+###############################################################################
+#  SRE HANDS-ON EVALUATION — COMPLETE COMMAND REFERENCE
+#  Vishnu K  |  All commands from start to finish, in order.
+#
+#  KEY DETAILS (fill/confirm before demo):
+#    Elastic IP        : 13.126.63.217
+#    SSH key           : ~/Downloads/sre-test-key.pem   (on Windows PC)
+#    GitHub repo       : https://github.com/vishnucax/SRE-Project1
+#    Image             : ghcr.io/vishnucax/sre-project1
+#    Grafana           : http://13.126.63.217:30080   (admin / admin123)
+#    Prometheus        : http://13.126.63.217:30090
+#    App (ingress)     : http://13.126.63.217
+#
+#  NOTE ON kubectl/helm ON THE VM:
+#    They need sudo + the k3s kubeconfig. Every command below uses:
+#      sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl ...
+#    (CI/CD uses a separate non-root kubeconfig at /home/ubuntu/.kube/config)
+###############################################################################
+
+
+###############################################################################
+# SECTION 0 — AWS VM LIFECYCLE (start/stop to save cost)
+###############################################################################
+# These are done in the AWS Console (EC2 > Instances), not the terminal:
+#   - START : select sre-test-vm > Instance state > Start instance
+#   - STOP  : select sre-test-vm > Instance state > Stop instance  (NOT Terminate!)
+#   - The Elastic IP (13.126.63.217) stays the same across stop/start.
+#
+# After starting the VM, SSH in from Git Bash on your PC:
+ssh -i ~/Downloads/sre-test-key.pem ubuntu@13.126.63.217
+# (add keepalive to avoid idle disconnects):
+ssh -i ~/Downloads/sre-test-key.pem -o ServerAliveInterval=60 ubuntu@13.126.63.217
+
+
+###############################################################################
+# SECTION 1 — INITIAL VM SETUP (already done once; for reference / rebuild)
+###############################################################################
+# Update the system
+sudo apt update && sudo apt upgrade -y
+
+# Install k3s (lightweight Kubernetes) — installs & starts as a service
+curl -sfL https://get.k3s.io | sudo sh -
+
+# Verify k3s node is Ready
+sudo kubectl get nodes
+
+# Verify built-in system pods (Traefik ingress, coredns, etc.)
+sudo kubectl get pods -A
+
+# (Optional) make kubectl usable without sudo — user-owned kubeconfig
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown ubuntu:ubuntu ~/.kube/config
+chmod 600 ~/.kube/config
+export KUBECONFIG=~/.kube/config
+echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc
+
+# Install Helm on the VM
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+helm version
+
+# Install Docker on the VM (used to build the image locally for first test)
+sudo apt update
+sudo apt install -y docker.io
+sudo usermod -aG docker $USER
+newgrp docker
+docker --version
+
+
+###############################################################################
+# SECTION 2 — CLONE THE REPO ON THE VM
+###############################################################################
+cd ~
+git clone https://github.com/vishnucax/SRE-Project1.git
+cd SRE-Project1
+
+# To get the latest code later:
+cd ~/SRE-Project1
+git pull origin main
+
+
+###############################################################################
+# SECTION 3 — BUILD & LOAD THE APP IMAGE MANUALLY (first-time / offline test)
+#             (Normally CI/CD does this automatically. Manual steps for backup.)
+###############################################################################
+cd ~/SRE-Project1
+
+# Build the Docker image (tag must match values.yaml)
+docker build -t ghcr.io/vishnucax/sre-project1:latest ./app
+
+# Save the image to a tar file
+docker save ghcr.io/vishnucax/sre-project1:latest -o /tmp/notes-app.tar
+
+# Import the image into k3s's containerd (k3s can't see Docker's images directly)
+sudo k3s ctr images import /tmp/notes-app.tar
+
+# Verify k3s has the image
+sudo k3s ctr images ls | grep sre-project1
+
+
+###############################################################################
+# SECTION 4 — HELM: VALIDATE & DEPLOY THE APP
+###############################################################################
+cd ~/SRE-Project1
+
+# Lint the chart (catch errors before deploying)
+helm lint ./helm/notes-app
+
+# Render templates to inspect the generated YAML (no deploy)
+helm template notes-app ./helm/notes-app | head -60
+
+# Install (first time)
+helm install notes-app ./helm/notes-app
+
+# Upgrade (after changes) — this is what CI/CD runs
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade --install notes-app ./helm/notes-app --wait --timeout 3m
+
+# Uninstall (teardown)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm uninstall notes-app
+
+
+###############################################################################
+# SECTION 5 — CHECK APP STATUS
+###############################################################################
+# Pods
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -l app=notes-api
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -o wide -l app=notes-api
+
+# All resources created by the chart
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get all
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get configmap,secret,ingress,pvc,networkpolicy,serviceaccount | grep notes
+
+# Logs (all app pods)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -l app=notes-api --tail=40
+
+# Logs (postgres)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -l app=notes-api-postgres --tail=40
+
+# CPU / memory usage
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl top pods -l app=notes-api
+
+# Recent cluster events (with timestamps)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get events --sort-by='.lastTimestamp' | tail -20
+
+
+###############################################################################
+# SECTION 6 — TEST THE APP
+###############################################################################
+# Via the ingress / Elastic IP (uses the real load balancer)
+curl -s http://13.126.63.217/health
+curl -s http://13.126.63.217/api/notes
+
+# Create a note
+curl -s -X POST http://13.126.63.217/api/notes \
+  -H "Content-Type: application/json" \
+  -d '{"content":"hello from the interview demo"}'
+
+# Confirm load balancing (should alternate between both pod names)
+for i in $(seq 1 10); do
+  curl -s http://13.126.63.217/health | grep -o '"hostname":"[^"]*"'
+done
+
+# See the metrics the app exposes
+curl -s http://13.126.63.217/metrics | grep notes_in_db
+
+# (Alternative) port-forward — NOTE: pins to ONE pod, bypasses load balancer
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl port-forward svc/notes-api 8080:80
+
+
+###############################################################################
+# SECTION 7 — OBSERVABILITY STACK INSTALL (already done; for rebuild)
+###############################################################################
+# Add Helm repos
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+# Namespace
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl create namespace monitoring
+
+# Prometheus + Grafana + Alertmanager (kube-prometheus-stack)
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --set grafana.adminPassword='admin123' \
+  --set grafana.service.type=NodePort \
+  --set grafana.service.nodePort=30080 \
+  --set prometheus.prometheusSpec.retention=6h \
+  --set prometheus.prometheusSpec.resources.requests.memory=400Mi \
+  --set prometheus.prometheusSpec.resources.limits.memory=1Gi \
+  --set prometheus.service.type=NodePort \
+  --set prometheus.service.nodePort=30090 \
+  --wait --timeout 10m
+
+# Loki + Promtail (loki-stack)
+helm install loki grafana/loki-stack \
+  --namespace monitoring \
+  --set loki.enabled=true \
+  --set promtail.enabled=true \
+  --set grafana.enabled=false \
+  --set prometheus.enabled=false \
+  --wait --timeout 5m
+
+# Verify monitoring pods
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -n monitoring
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get svc -n monitoring | grep loki
+
+# Test Loki is ready (from inside the cluster)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl run loki-test --rm -it \
+  --image=curlimages/curl --restart=Never -n monitoring -- \
+  curl -s http://loki:3100/ready
+
+# Grafana Loki data source URL (set in Grafana UI):  http://loki:3100
+#   (or full name)  http://loki.monitoring.svc.cluster.local:3100
+
+
+###############################################################################
+# SECTION 8 — FAILURE SIMULATIONS (Task 6)
+###############################################################################
+cd ~/SRE-Project1
+
+# Make scripts executable (after a fresh git pull)
+chmod +x tests/simulate-pod-crashloop.sh
+chmod +x tests/simulate-db-outage.sh
+chmod +x tests/simulate-high-cpu.sh
+
+# Timestamp helper — run right before injecting a fault (this is T+0)
+date -u '+%Y-%m-%d %H:%M:%S UTC'
+
+# --- Incident 1: Pod Crash Loop ---
+./tests/simulate-pod-crashloop.sh
+#   watch pods:
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -l app=notes-api -w
+#   alert to watch (Prometheus): NotesApiPodCrashLooping
+#   recover:
+./tests/simulate-pod-crashloop.sh --recover
+
+# --- Incident 2: Database Outage ---
+./tests/simulate-db-outage.sh
+#   alert to watch: NotesApiHighErrorRate (also NotesApiDown)
+#   recover:
+./tests/simulate-db-outage.sh --recover
+#   (manual equivalent:)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl scale deployment notes-api-postgres --replicas=0   # break
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl scale deployment notes-api-postgres --replicas=1   # fix
+
+# --- Incident 3: High CPU ---
+./tests/simulate-high-cpu.sh
+#   alert to watch: NotesApiHighCPU
+#   recovery is automatic (CPU drops when stress stops). To force-stop stray calls:
+pkill -f "api/stress" 2>/dev/null
+
+
+###############################################################################
+# SECTION 9 — RUNBOOK / COMMON REMEDIAL ACTIONS (handy live commands)
+###############################################################################
+# Restart the app (rolling restart)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl rollout restart deployment notes-api
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl rollout status deployment notes-api
+
+# Scale the app up/down
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl scale deployment notes-api --replicas=3
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl scale deployment notes-api --replicas=2
+
+# Roll back a bad Helm release
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm history notes-app
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm rollback notes-app <REVISION>
+
+# Delete a stuck pod (it will be recreated)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl delete pod <POD_NAME>
+
+# Describe a pod (troubleshoot why it's not starting)
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl describe pod <POD_NAME>
+
+# Recover the database
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl scale deployment notes-api-postgres --replicas=1
+
+
+###############################################################################
+# SECTION 10 — CI/CD (runs automatically on git push to main)
+###############################################################################
+# On the Windows PC, in the project folder:
+cd "/c/Users/vishn/OneDrive/Desktop/Nerdience/Projects/sre evaluation/SRE-Project1"
+
+# Standard commit + push (this TRIGGERS the pipeline: build -> scan -> push -> deploy)
+git add .
+git status
+git commit -m "your message"
+git push origin main
+
+# Watch the run at: GitHub repo > Actions tab
+# GitHub Secrets used by the pipeline: VM_HOST, VM_USER, VM_SSH_KEY
+
+
+###############################################################################
+# SECTION 11 — WINDOWS PC: SSH KEY SETUP (reference)
+###############################################################################
+# In Git Bash on the PC:
+mkdir -p ~/.ssh
+mv ~/Downloads/sre-test-key.pem ~/.ssh/    # optional: move key to .ssh
+chmod 400 ~/.ssh/sre-test-key.pem          # or ~/Downloads/sre-test-key.pem
+ssh -i ~/.ssh/sre-test-key.pem ubuntu@13.126.63.217
+
+
+###############################################################################
+# SECTION 12 — QUICK "IS EVERYTHING HEALTHY?" CHECK (run before the demo)
+###############################################################################
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A | grep -Ev "Running|Completed"   # shows anything NOT healthy
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -n monitoring
+curl -s http://13.126.63.217/health
+# Then open in browser: app (http://13.126.63.217), Grafana (:30080), Prometheus (:30090/alerts)
+###############################################################################
+#  END OF COMMAND REFERENCE
+###############################################################################
