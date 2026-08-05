@@ -101,6 +101,7 @@ The app exposes hooks that make each SRE capability demonstrable:
                      │ browser
                    Reviewer  (app :80, Grafana :30080, Prometheus :30090)
 ```
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/50ba736d-c8f6-41f6-90e5-afcd190b5819" />
 
 **Flow:** push to `main` → GitHub Actions builds + scans + pushes the image →
 deploys to k3s via Helm over SSH → Prometheus scrapes the app → Grafana visualizes
