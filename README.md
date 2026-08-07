@@ -9,6 +9,10 @@
   <b>Author:</b> Vishnu K &nbsp;•&nbsp;
   <b>Delivery:</b> Aug 4, 2026
 </p>
+<p align="left">
+  <b>Demo Video:</b> https://www.loom.com/share/ec118e2a7b1e4153819c9ad96b474ad6
+</p>
+
 
 | Resource | URL | Access |
 |---|---|---|
